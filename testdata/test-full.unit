@@ -1,0 +1,23 @@
+; This is a fully-populated test Unit, which exercises the
+# lexer, parser, and unmarshalling capabilities of the unitfile package.
+[Unit]
+StringField=This is a string
+IntField=42
+FloatField=420.69
+BoolField=false
+StringPtrField=This is a string pointer inside of a section.
+IntPtrField=69
+FloatPtrField=13.37
+BoolPtrField=true
+
+[StructSection]
+StringField=This is a string inside of a section.
+IntField=69
+FloatField=13.37
+BoolField=true
+
+[StructPtrSection]
+StringField=This is a string inside of a pointer section.
+IntField=69
+FloatField=13.37
+BoolField=true

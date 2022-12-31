@@ -1,0 +1,19 @@
+# This is an example unit file.
+;	
+[Unit]
+One=1
+Two=
+Three= \
+3
+
+[SectionA]
+# Comment
+; Comment
+One="foo" "bar"
+Two="foo" \
+"bar"\
+	"baz"
+Three=This is a line\
+# with some
+	;comments inside
+but it continues.
