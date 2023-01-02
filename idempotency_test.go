@@ -175,7 +175,7 @@ func TestTranscodingIdempotency(t *testing.T) {
 				Setting []string
 				KeyTwo  string
 			}{
-				[]string{"something", "some thing", "…"},
+				[]string{"some thing", "something", "…"},
 				"value 2 \n\tvalue 2 continued"},
 		},
 		"documentation example 1c": {
@@ -237,7 +237,7 @@ func TestTranscodingIdempotency(t *testing.T) {
 				t.Fatalf("Marshal(): unwanted error: %v", err)
 			}
 			if err := Unmarshal(data, tc.got, tc.uopts...); err != nil {
-				t.Fatalf("Unmarshal(): unwanted error: %v", err)
+				t.Fatalf("error unmarshalling intermediate:\n=== BEGIN UNIT ===\n%v\n=== END UNIT ===\n%v", string(data), err)
 			}
 			if diff := cmp.Diff(tc.got, tc.want, cmpOpts...); diff != "" {
 				t.Errorf("mismatch (-got,+want):\n%v", diff)

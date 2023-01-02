@@ -219,6 +219,33 @@ Field=destroyer of worlds` + "\n",
 Field=I am become death
 Field=destroyer of worlds` + "\n",
 		},
+		"documentation example 1a": {
+			from: &struct{ KeyOne, KeyTwo string }{"value 1", "value 2"},
+			want: `[Unit]
+KeyOne=value 1
+KeyTwo=value 2` + "\n",
+		},
+		"documentation example 1b": {
+			from: &struct {
+				Setting []string
+				KeyTwo  string
+			}{
+				[]string{"something", "some thing", "…"},
+				"value 2 \n\tvalue 2 continued",
+			},
+			want: `[Unit]
+KeyTwo=value 2 \
+	value 2 continued
+Setting=some thing
+Setting=something
+Setting=…` + "\n",
+		},
+		"documentation example 1c": {
+			from: &struct{ KeyThree string }{"value 3\n\t\t\t\tvalue 3 continued"},
+			want: `[Unit]
+KeyThree=value 3\
+				value 3 continued` + "\n",
+		},
 	} {
 		t.Run(tn, func(t *testing.T) {
 			got, err := Marshal(tc.from, tc.opts...)

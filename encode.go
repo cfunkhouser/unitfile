@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -15,8 +16,12 @@ import (
 // MarshalOption modifies the behavior of Marshal.
 type MarshalOption func(*encoder)
 
-// ErrInvalidSource is returned when the destination is invalid.
-var ErrInvalidSource = errors.New("invalid marshal source")
+var (
+	// ErrInvalidSource is returned when the destination is invalid.
+	ErrInvalidSource = errors.New("invalid marshal source")
+
+	escapeContRe = regexp.MustCompile("\r?\n")
+)
 
 const topSection = ""
 
@@ -52,7 +57,7 @@ func Marshal(from any, opts ...MarshalOption) ([]byte, error) {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	if err := e.render(&buf); err != nil {
+	if err := e.write(&buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -66,6 +71,7 @@ type encoder struct {
 	values   map[string]map[string][]string // section name -> field name -> values
 }
 
+// sortedKeys returns a sorted slice of map keys excluding the empty string.
 func sortedKeys[T any](m map[string]T) (keys []string) {
 	// Spare some cycles for determinism.
 	for s := range m {
@@ -78,7 +84,7 @@ func sortedKeys[T any](m map[string]T) (keys []string) {
 	return
 }
 
-func renderFields(out io.Writer, fields map[string][]string) error {
+func writeFields(out io.Writer, fields map[string][]string) error {
 	for _, fn := range sortedKeys(fields) {
 		lval := fields[fn]
 		if len(lval) == 0 {
@@ -97,7 +103,7 @@ func renderFields(out io.Writer, fields map[string][]string) error {
 	return nil
 }
 
-func (e *encoder) render(out io.Writer) error {
+func (e *encoder) write(out io.Writer) error {
 	// make sure the top section is handled first
 	sns := append([]string{topSection}, sortedKeys(e.values)...)
 	for _, sn := range sns {
@@ -108,7 +114,7 @@ func (e *encoder) render(out io.Writer) error {
 		if _, err := fmt.Fprintf(out, "[%v]\n", sn); err != nil {
 			return err
 		}
-		if err := renderFields(out, lfields); err != nil {
+		if err := writeFields(out, lfields); err != nil {
 			return err
 		}
 		// TODO(christian): put a blank line between sections.
@@ -142,6 +148,50 @@ func (e *encoder) Leave(field reflect.StructField, val reflect.Value) {
 	e.level--
 }
 
+func prerender(fn string, val reflect.Value, acc map[string][]string) error {
+	if !val.IsValid() {
+		return nil
+	}
+	k := val.Kind()
+	switch k {
+	case reflect.Bool:
+		// Booleans are rendered no matter what, for now.
+		// TODO(christian): Allow this conditionally, perhaps via tag.
+		acc[fn] = []string{fmt.Sprintf("%v", val.Bool())}
+	case reflect.Float32, reflect.Float64:
+		if val.IsZero() {
+			return nil
+		}
+		acc[fn] = []string{strings.TrimRight(fmt.Sprintf("%f", val.Float()), "0")}
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+		if val.IsZero() {
+			return nil
+		}
+		acc[fn] = []string{fmt.Sprintf("%d", val.Int())}
+	case reflect.String:
+		if val.IsZero() {
+			return nil
+		}
+		// insert line continuations for multiline strings
+		vs := escapeContRe.ReplaceAllString(strings.TrimSpace(val.String()), "\\\n")
+		acc[fn] = append(acc[fn], vs)
+	case reflect.Slice:
+		l := val.Len()
+		if l == 0 {
+			return nil
+		}
+		for i := 0; i < l; i++ {
+			v := reflect.Indirect(val.Index(i))
+			if err := prerender(fn, v, acc); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("%w: field type %v is not supported", ErrInvalidSource, k)
+	}
+	return nil
+}
+
 func (e *encoder) Visit(field reflect.StructField, val reflect.Value) error {
 	if descendable(field.Type) {
 		// Handle this field when we enter it, instead of here.
@@ -150,47 +200,11 @@ func (e *encoder) Visit(field reflect.StructField, val reflect.Value) error {
 	if field.Type.Kind() == reflect.Pointer {
 		val = val.Elem()
 	}
-	if !val.IsValid() {
-		return nil
-	}
-
-	// TODO(christian): handle values more correctly
-	// TODO(christian): handleresetting values to match the SystemD semantics?
 	fn := field.Name
 	if tn, ok := field.Tag.Lookup(unitfileStructTag); ok && tn != "" {
 		fn = tn
 	}
-
-	k := val.Kind()
-	switch k {
-	case reflect.Bool:
-		// Booleans are rendered no matter what, for now.
-		// TODO(christian): Allow this conditionally, perhaps via tag.
-		e.values[e.curr][fn] = []string{fmt.Sprintf("%v", val.Bool())}
-	case reflect.Float32, reflect.Float64:
-		if val.IsZero() {
-			return nil
-		}
-		e.values[e.curr][fn] = []string{strings.TrimRight(fmt.Sprintf("%f", val.Float()), "0")}
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-		if val.IsZero() {
-			return nil
-		}
-		e.values[e.curr][fn] = []string{fmt.Sprintf("%d", val.Int())}
-	case reflect.String:
-		if val.IsZero() {
-			return nil
-		}
-		e.values[e.curr][fn] = []string{fmt.Sprintf("%s", val)}
-	case reflect.Slice:
-		ss, ok := val.Interface().([]string)
-		if ok {
-			e.values[e.curr][fn] = append(e.values[e.curr][fn], ss...)
-		}
-	default:
-		return fmt.Errorf("%w: field type %v is not supported", ErrInvalidSource, k)
-	}
-	return nil
+	return prerender(fn, val, e.values[e.curr])
 }
 
 func maybeDereference(typ reflect.Type, val reflect.Value) (reflect.Type, reflect.Value, bool) {

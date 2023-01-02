@@ -327,7 +327,8 @@ KeyTwo=value 2 \
 				KeyTwo  string
 			}{
 				[]string{"something", "some thing", "…"},
-				"value 2 \n\tvalue 2 continued"},
+				"value 2 \n\tvalue 2 continued",
+			},
 		},
 		"documentation example 1c": {
 			data: []byte(`[Section C]

@@ -24,6 +24,14 @@ var (
 	contValRe  = regexp.MustCompile("\\\\\r?\n")
 )
 
+type panickyErrorListener struct {
+	*antlr.DefaultErrorListener
+}
+
+func (l *panickyErrorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
+	panic(fmt.Errorf("%w: syntax error: %d:%d: %v", ErrMalformedUnitFile, line, column, msg))
+}
+
 // cleanValue sanitizes a field value by replacing line continuations with
 // newlines, and trimming whitespace from the front and back.
 func cleanValue(val string) string {
@@ -92,10 +100,10 @@ func Unmarshal(data []byte, to any, opts ...UnmarshalOption) error {
 // panickyUnmarshal is like Unmarshal, but will panic when parsing errors are
 // encountered.
 func panickyUnmarshal(data []byte, to any, opts ...UnmarshalOption) error {
+	l := parser.NewUnitLexer(antlr.NewInputStream(string(data)))
+	l.AddErrorListener(&panickyErrorListener{})
 	p := parser.NewUnitParser(
-		antlr.NewCommonTokenStream(
-			parser.NewUnitLexer(antlr.NewInputStream(string(data))),
-			antlr.TokenDefaultChannel))
+		antlr.NewCommonTokenStream(l, antlr.TokenDefaultChannel))
 
 	dest := reflect.ValueOf(to)
 	// TODO(christian): Make the invalid destination errors more clear.
