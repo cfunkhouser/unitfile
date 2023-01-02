@@ -1,49 +1,11 @@
 package unitfile
 
 import (
-	"embed"
 	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
-
-//go:embed testdata
-var testdataFS embed.FS
-
-type testUnitSection struct {
-	StringField string
-	IntField    int
-	FloatField  float64
-	BoolField   bool
-}
-
-type testUnit struct {
-	StringField      string
-	IntField         int
-	FloatField       float64
-	BoolField        bool
-	StringPtrField   *string
-	IntPtrField      *int
-	FloatPtrField    *float64
-	BoolPtrField     *bool
-	StructSection    testUnitSection
-	StructPtrSection *testUnitSection
-}
-
-func readTestFile(tb testing.TB, path string) []byte {
-	tb.Helper()
-	data, err := testdataFS.ReadFile(path)
-	if err != nil {
-		tb.Fatalf("failed to read file %q: %v", path, err)
-	}
-	return data
-}
-
-func ptr[T any](tb testing.TB, v T) *T {
-	tb.Helper()
-	return &v
-}
 
 func TestCleanValue(t *testing.T) {
 	for tn, tc := range map[string]struct {
@@ -74,7 +36,7 @@ func TestUnmarshal(t *testing.T) {
 	cmpOpts := cmp.Options{cmp.AllowUnexported(testUnit{}, testUnitSection{})}
 	for tn, tc := range map[string]struct {
 		data []byte
-		opts []Option
+		opts []UnmarshalOption
 		got  any
 		want any
 		err  error
@@ -339,7 +301,7 @@ DoesNotExist=42`),
 Exists=this is a string
 [SectionA]
 DoesNotExist=42`),
-			opts: []Option{Strictly},
+			opts: []UnmarshalOption{Strictly},
 			got:  &struct{ Exists string }{},
 			err:  ErrInvalidDestination,
 		},

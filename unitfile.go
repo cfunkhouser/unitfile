@@ -2,7 +2,11 @@
 // structs. The semantics are as similar to encoding/json as possible.
 package unitfile
 
-import "funkhouse.rs/unitfile/internal/parser"
+import (
+	"reflect"
+
+	"funkhouse.rs/unitfile/internal/parser"
+)
 
 // The decoder makes use of ANTLR-generated parser code, which is hidden in
 // ./internal/parser to keep the published API and its documentation clean. The
@@ -16,3 +20,37 @@ import "funkhouse.rs/unitfile/internal/parser"
 //
 //go:generate antlr4 -Dlanguage=Go -package parser -o internal/parser UnitLexer.g4 UnitParser.g4
 var _ parser.UnitParserListener = &decoder{}
+
+// unitfileStructTag is the struct tag used for encoding and decoding Units.
+const unitfileStructTag = "unit"
+
+// container abstracts a Unit section container - currently, assuming a struct -
+// for use in transcoding.
+type container struct {
+	val   reflect.Value
+	byTag map[string]string
+}
+
+// field resolves a container field by tag name and then struct field name, in
+// that order. A zero-value Value is returned if neither is found.
+func (c *container) field(tagOrName string) reflect.Value {
+	if n := c.byTag[tagOrName]; n != "" {
+		return c.val.FieldByName(n)
+	}
+	return c.val.FieldByName(tagOrName)
+}
+
+func prepareContainer(val reflect.Value) *container {
+	tags := make(map[string]string)
+	vt := val.Type()
+	for i := 0; i < vt.NumField(); i++ {
+		field := vt.Field(i)
+		if tag, ok := field.Tag.Lookup(unitfileStructTag); ok {
+			tags[tag] = field.Name
+		}
+	}
+	return &container{
+		val:   val,
+		byTag: tags,
+	}
+}

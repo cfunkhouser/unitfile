@@ -13,8 +13,6 @@ import (
 	"funkhouse.rs/unitfile/internal/parser"
 )
 
-const unitfileStructTag = "unit"
-
 var (
 	// ErrInvalidDestination is returned when the destination is invalid.
 	ErrInvalidDestination = errors.New("invalid unmarshal target")
@@ -56,11 +54,12 @@ func systemdBool(val string) (bool, error) {
 	return false, fmt.Errorf("%q cannot be converted to unitfile boolean value", val)
 }
 
-// Option for unmarshalling.
-type Option func(*decoder)
+// UnmarshalOption modifies the behavior of Unmarshal.
+type UnmarshalOption func(*decoder)
 
-// Strictly causes decoding to error when a field contained in the Unit contents
-// would be ignored because the destination does not contain a matching field.
+// Strictly is an UnmarshalOption which causes decoding to error when a field
+// contained in the Unit contents would be ignored because the destination does
+// not contain a matching field.
 func Strictly(d *decoder) {
 	d.strict = true
 }
@@ -68,12 +67,12 @@ func Strictly(d *decoder) {
 // Unmarshal parses SystemD Unit file-encoded data and stores the result in to,
 // which must be a pointer to a struct. When an error is returned, the value of
 // to is undefined.
-func Unmarshal(data []byte, to any, opts ...Option) error {
+func Unmarshal(data []byte, to any, opts ...UnmarshalOption) error {
 	// The ANTLR walker panics when it encounteres malformed Unit file data. In
 	// order to make this library safe to use in contexts where panicking would be
 	// inconvenient, recover here and return the reason for the panic as an error.
 	var err error
-	func(data []byte, to any, opts []Option) {
+	func(data []byte, to any, opts []UnmarshalOption) {
 		defer func() {
 			r := recover()
 			if r == nil {
@@ -92,7 +91,7 @@ func Unmarshal(data []byte, to any, opts ...Option) error {
 
 // panickyUnmarshal is like Unmarshal, but will panic when parsing errors are
 // encountered.
-func panickyUnmarshal(data []byte, to any, opts ...Option) error {
+func panickyUnmarshal(data []byte, to any, opts ...UnmarshalOption) error {
 	p := parser.NewUnitParser(
 		antlr.NewCommonTokenStream(
 			parser.NewUnitLexer(antlr.NewInputStream(string(data))),
@@ -116,35 +115,6 @@ func panickyUnmarshal(data []byte, to any, opts ...Option) error {
 
 	antlr.ParseTreeWalkerDefault.Walk(d, p.Unit())
 	return nil
-}
-
-type container struct {
-	val   reflect.Value
-	byTag map[string]string
-}
-
-// field resolves a container field by tag name and then struct field name, in
-// that order. A zero-value Value is returned if neither is found.
-func (c *container) field(tagOrName string) reflect.Value {
-	if n := c.byTag[tagOrName]; n != "" {
-		return c.val.FieldByName(n)
-	}
-	return c.val.FieldByName(tagOrName)
-}
-
-func prepareContainer(val reflect.Value) *container {
-	tags := make(map[string]string)
-	vt := val.Type()
-	for i := 0; i < vt.NumField(); i++ {
-		field := vt.Field(i)
-		if tag, ok := field.Tag.Lookup(unitfileStructTag); ok {
-			tags[tag] = field.Name
-		}
-	}
-	return &container{
-		val:   val,
-		byTag: tags,
-	}
 }
 
 // decoder handles parsing and decoding Unit files. It implements the ANTLR-
